@@ -1,0 +1,5 @@
+; invalid code fixture
+键码=abc
+码长=2
+[数据]
+ad 无效
