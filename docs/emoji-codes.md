@@ -5,10 +5,9 @@
 
 ## 目录范围与来源
 
-- 从 20 个扩充为 **1384 个不重复 Emoji**，保留原来 20 个常用表情在总览开头
-  的顺序；全部候选同时被分配到 26 类之一。
-- 数据源：[Unicode Emoji 16.0 emoji-test.txt](https://www.unicode.org/Public/emoji/16.0/emoji-test.txt)。
-- 上游文件 SHA-256：`24f0c534e86cf142e2496953e8f0e46a3e702392911eddcd29c6cced85139697`。
+- 共 **1384 个不重复 Emoji**，常用表情位于总览开头；全部候选同时被分配到
+  26 类之一。
+- 数据源：[Unicode Emoji 16.0](https://www.unicode.org/Public/emoji/16.0/emoji-test.txt)。
 - 采用 fully-qualified 的单个基字形，以及带 U+FE0F Emoji 变体选择符的形式，
   包括常见笑脸、手势、爱心、动物、食物、交通、工具和符号。
 - 暂不收入需要复杂整形的肤色组合、ZWJ 家庭/职业、双区域字母国旗、组合键帽
@@ -64,46 +63,12 @@
 
 ## 原码保护
 
-按原始普通候选区核查，不包含用户学习数据：
+`oj` 已被占用时禁用整个 Emoji 入口；某个分类码被占用时保留原候选，不在该码
+追加 Emoji，该类 Emoji 仍可在总览找到。不会改用其他空码，也不改写词典或用户
+学习文件。内置 `flypy.txt` 的 `oj` 已有 `）`，因此不启用 Emoji 入口。
 
-| 来源 | 原始双字母空码 | `oj` 家族状态 |
-| --- | --- | --- |
-| `~/.local/share/fcitx5/table/flypy.dict` | `oj` | 根码及 `oja`–`ojz` 均未占用，启用目录 |
-| `src/assets/flypy.txt` | `of`、`qo` | `oj` 已有 `）`，整组禁用，绝不改用其他入口 |
+## 显示支持
 
-运行时检查原码冲突：根码被占用则禁用整个家族；某个分类码被占用则保留原候选，
-不在该分类码追加 Emoji。该类 Emoji 仍可在总览找到。根码和类别标题都不覆盖原码。
-真实词典 `of` → `^`、`qo` → `群殴` 保持不变，不改写词典或用户学习文件。
-
-基础文件 SHA-256：
-
-- 本地 `flypy.dict`：`2eed2a8f62484edad80e71e09c74c917c89b1c23b628c48e5ef5faee5a98fd81`
-- 内置 `flypy.txt`：`12eff006341d5712a2f5a54d3215d5fdd1eab668307f19df2c695f9b402f079d`
-
-## 数据维护与诊断
-
-`src/assets/emoji.txt` 是生成后的离线目录，安装运行时不联网。所有数据都属于
-`oj` 或 `oja`–`ojz`；`Label[code]=...` 是 waytinyime 的本地候选标题扩展，
-只用于展示，不参与提交。类别码精确匹配，不改变普通码表的前缀匹配策略。
-
-更新同一 Unicode 版本的数据（Python 标准库，无额外依赖）：
-
-```sh
-python3 tools/update-emoji.py
-# 或使用已下载的官方 emoji-test.txt，完全离线重新生成：
-python3 tools/update-emoji.py --source /path/to/emoji-test.txt
-```
-
-生成器输出每类数量和源文件哈希，拒绝不匹配的 Unicode 版本或未归类的子组。
-总览原有的 20 个常用表情始终保留在开头。当前本地词典新增 2768 条候选记录：
-1384 条总览加 1384 条分类记录，实际不重复 Emoji 数仍为 1384。
-
-```sh
-.cache/auto-loop/build/src/waytinyime --inspect --input-method flypy --query oj
-.cache/auto-loop/build/src/waytinyime --inspect --input-method flypy --query ojf
-.cache/auto-loop/build/src/waytinyime --inspect --input-method flypy --query ojq
-```
-
-两类候选窗使用中文主字体与 Emoji 彩色字体回退，处理 FE0F 而不显示多余方框；
-固定 bitmap strike 缩放到候选行字号。XIM 使用现有 COMPOUND_TEXT 的 UTF-8 扩展段，
-客户端对 Unicode 的支持仍取决于其实现。
+Emoji 目录离线可用，运行时不联网。两类候选窗均支持中文与彩色 Emoji 字体
+回退；字形是否完整取决于已安装的字体，XIM 客户端对 Unicode 的支持也取决于
+其实现。
