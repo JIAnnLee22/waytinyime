@@ -82,6 +82,7 @@ static bool load_font(struct xim_window *window) {
     FcPattern *match;
     FcResult result;
     FcChar8 *font_path = NULL;
+    int face_index = 0;
     bool loaded = false;
 
     if (!FcInit() || FT_Init_FreeType(&window->freetype) != 0) {
@@ -92,6 +93,7 @@ static bool load_font(struct xim_window *window) {
     if (pattern == NULL) {
         return false;
     }
+    FcPatternAddDouble(pattern, FC_PIXEL_SIZE, XIM_WINDOW_FONT_SIZE);
     FcConfigSubstitute(NULL, pattern, FcMatchPattern);
     FcDefaultSubstitute(pattern);
     match = FcFontMatch(NULL, pattern, &result);
@@ -99,11 +101,12 @@ static bool load_font(struct xim_window *window) {
     if (
         match != NULL
         && FcPatternGetString(match, FC_FILE, 0, &font_path) == FcResultMatch
-        && FT_New_Face(window->freetype, (const char *)font_path, 0,
-            &window->font) == 0
-        && FT_Set_Pixel_Sizes(window->font, 0, XIM_WINDOW_FONT_SIZE) == 0
     ) {
-        loaded = true;
+        /* FC_INDEX includes the collection face and variable-font instance. */
+        FcPatternGetInteger(match, FC_INDEX, 0, &face_index);
+        loaded = FT_New_Face(
+            window->freetype, (const char *)font_path, face_index, &window->font
+        ) == 0 && FT_Set_Pixel_Sizes(window->font, 0, XIM_WINDOW_FONT_SIZE) == 0;
     }
     if (match != NULL) {
         FcPatternDestroy(match);

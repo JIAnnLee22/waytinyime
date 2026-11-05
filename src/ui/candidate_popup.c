@@ -51,6 +51,7 @@ struct candidate_popup {
     FT_Library freetype;
     FT_Face font;
     struct emoji_font emoji;
+    int scale;
     char text[POPUP_TEXT_CAPACITY];
     size_t cursor_candidate_start;
     size_t cursor_candidate_end;
@@ -94,14 +95,20 @@ static uint32_t next_codepoint(const char **cursor) {
     return codepoint;
 }
 
-static bool load_font(struct candidate_popup *popup) {
+static bool load_font(struct candidate_popup *popup, int scale) {
     FcPattern *pattern;
     FcPattern *match;
     FcResult result;
     FcChar8 *font_path = NULL;
+    FT_Face font = NULL;
+    int face_index = 0;
+    int pixels = POPUP_FONT_SIZE * scale;
     bool loaded = false;
 
-    if (!FcInit() || FT_Init_FreeType(&popup->freetype) != 0) {
+    if (
+        !FcInit()
+        || (popup->freetype == NULL && FT_Init_FreeType(&popup->freetype) != 0)
+    ) {
         return false;
     }
 
@@ -109,6 +116,7 @@ static bool load_font(struct candidate_popup *popup) {
     if (pattern == NULL) {
         return false;
     }
+    FcPatternAddDouble(pattern, FC_PIXEL_SIZE, pixels);
     FcConfigSubstitute(NULL, pattern, FcMatchPattern);
     FcDefaultSubstitute(pattern);
     match = FcFontMatch(NULL, pattern, &result);
@@ -116,19 +124,30 @@ static bool load_font(struct candidate_popup *popup) {
     if (
         match != NULL
         && FcPatternGetString(match, FC_FILE, 0, &font_path) == FcResultMatch
-        && FT_New_Face(popup->freetype, (const char *)font_path, 0, &popup->font)
-            == 0
-        && FT_Set_Pixel_Sizes(popup->font, 0, POPUP_FONT_SIZE) == 0
     ) {
-        loaded = true;
+        /* FC_INDEX includes the collection face and variable-font instance. */
+        FcPatternGetInteger(match, FC_INDEX, 0, &face_index);
+        loaded = FT_New_Face(
+            popup->freetype, (const char *)font_path, face_index, &font
+        ) == 0 && FT_Set_Pixel_Sizes(font, 0, pixels) == 0;
     }
     if (match != NULL) {
         FcPatternDestroy(match);
     }
-    if (loaded) {
-        emoji_font_init(&popup->emoji, popup->freetype, POPUP_FONT_SIZE);
+    if (!loaded) {
+        if (font != NULL) {
+            FT_Done_Face(font);
+        }
+        return false;
     }
-    return loaded;
+    if (popup->font != NULL) {
+        FT_Done_Face(popup->font);
+    }
+    popup->font = font;
+    popup->scale = scale;
+    emoji_font_destroy(&popup->emoji);
+    emoji_font_init(&popup->emoji, popup->freetype, pixels);
+    return true;
 }
 
 static void buffer_release(void *data, struct wl_buffer *buffer) {
@@ -268,15 +287,18 @@ static void measure_popup(
         }
     }
 
-    *width = text_width + 2 * POPUP_HORIZONTAL_PADDING;
-    if (*width < 80) {
-        *width = 80;
+    *width = text_width + 2 * POPUP_HORIZONTAL_PADDING * popup->scale;
+    if (*width < 80 * popup->scale) {
+        *width = 80 * popup->scale;
     }
-    if (*width > POPUP_MAX_WIDTH) {
-        *width = POPUP_MAX_WIDTH;
+    if (*width > POPUP_MAX_WIDTH * popup->scale) {
+        *width = POPUP_MAX_WIDTH * popup->scale;
     }
-    *height = ascender + descender + 2 * POPUP_VERTICAL_PADDING;
-    *baseline = POPUP_VERTICAL_PADDING + ascender;
+    *height = ascender + descender + 2 * POPUP_VERTICAL_PADDING * popup->scale;
+    *baseline = POPUP_VERTICAL_PADDING * popup->scale + ascender;
+    /* Buffer dimensions must cover a whole number of surface-local pixels. */
+    *width = (*width + popup->scale - 1) / popup->scale * popup->scale;
+    *height = (*height + popup->scale - 1) / popup->scale * popup->scale;
 }
 
 static uint32_t blend_color(uint32_t background, uint32_t foreground, uint8_t alpha) {
@@ -302,7 +324,8 @@ static void draw_glyph(
     const FT_Bitmap *bitmap,
     int origin_x,
     int origin_y,
-    uint32_t color
+    uint32_t color,
+    int border
 ) {
     for (unsigned int row = 0; row < bitmap->rows; row++) {
         int y = origin_y + (int)row;
@@ -312,14 +335,14 @@ static void draw_glyph(
                 + (size_t)(bitmap->rows - 1 - row)
                     * (size_t)(-bitmap->pitch);
 
-        if (y < 1 || y >= buffer->height - 1) {
+        if (y < border || y >= buffer->height - border) {
             continue;
         }
         for (unsigned int column = 0; column < bitmap->width; column++) {
             int x = origin_x + (int)column;
             uint8_t alpha;
 
-            if (x < 1 || x >= buffer->width - 1) {
+            if (x < border || x >= buffer->width - border) {
                 continue;
             }
             if (bitmap->pixel_mode == FT_PIXEL_MODE_MONO) {
@@ -346,28 +369,19 @@ static bool draw_buffer(
     int baseline
 ) {
     const char *cursor = popup->text;
-    int pen_x = POPUP_HORIZONTAL_PADDING;
-    size_t pixel_count = buffer->size / sizeof(uint32_t);
+    int padding = POPUP_HORIZONTAL_PADDING * popup->scale;
+    int pen_x = padding;
 
-    for (size_t index = 0; index < pixel_count; index++) {
-        buffer->pixels[index] = POPUP_BACKGROUND;
-    }
-    for (int x = 0; x < buffer->width; x++) {
-        buffer->pixels[x] = POPUP_BORDER;
-        buffer->pixels[
-            (size_t)(buffer->height - 1) * (size_t)(buffer->stride / 4)
-                + (size_t)x
-        ] = POPUP_BORDER;
-    }
     for (int y = 0; y < buffer->height; y++) {
-        buffer->pixels[(size_t)y * (size_t)(buffer->stride / 4)] = POPUP_BORDER;
-        buffer->pixels[
-            (size_t)y * (size_t)(buffer->stride / 4)
-                + (size_t)(buffer->width - 1)
-        ] = POPUP_BORDER;
+        for (int x = 0; x < buffer->width; x++) {
+            bool border = x < popup->scale || x >= buffer->width - popup->scale
+                || y < popup->scale || y >= buffer->height - popup->scale;
+            buffer->pixels[(size_t)y * (size_t)(buffer->stride / 4) + (size_t)x]
+                = border ? POPUP_BORDER : POPUP_BACKGROUND;
+        }
     }
 
-    while (*cursor != '\0' && pen_x < buffer->width - POPUP_HORIZONTAL_PADDING) {
+    while (*cursor != '\0' && pen_x < buffer->width - padding) {
         size_t byte_offset = (size_t)(cursor - popup->text);
         uint32_t codepoint = next_codepoint(&cursor);
         uint32_t color = byte_offset >= popup->cursor_candidate_start
@@ -398,7 +412,8 @@ static bool draw_buffer(
             &popup->font->glyph->bitmap,
             pen_x + popup->font->glyph->bitmap_left,
             baseline - popup->font->glyph->bitmap_top,
-            color
+            color,
+            popup->scale
         );
         pen_x += (int)(popup->font->glyph->advance.x >> 6);
     }
@@ -431,11 +446,61 @@ static bool render_popup(struct candidate_popup *popup) {
 
     buffer->busy = true;
     popup->redraw_pending = false;
+    if (
+        wl_surface_get_version(popup->surface)
+            >= WL_SURFACE_SET_BUFFER_SCALE_SINCE_VERSION
+    ) {
+        wl_surface_set_buffer_scale(popup->surface, popup->scale);
+    }
     wl_surface_attach(popup->surface, buffer->buffer, 0, 0);
-    wl_surface_damage(popup->surface, 0, 0, width, height);
+    wl_surface_damage(
+        popup->surface, 0, 0, width / popup->scale, height / popup->scale
+    );
     wl_surface_commit(popup->surface);
     return true;
 }
+
+static void surface_output(void *data, struct wl_surface *surface,
+    struct wl_output *output) {
+    (void)data;
+    (void)surface;
+    (void)output;
+}
+
+static void surface_preferred_buffer_scale(void *data, struct wl_surface *surface,
+    int32_t factor) {
+    struct candidate_popup *popup = data;
+    (void)surface;
+
+    if (
+        factor < 1 || factor > INT32_MAX / POPUP_MAX_WIDTH
+        || factor == popup->scale
+    ) {
+        return;
+    }
+    /* Rasterize at output resolution rather than stretching an 18px bitmap. */
+    if (!load_font(popup, factor)) {
+        return;
+    }
+    if (popup->visible) {
+        popup->redraw_pending = true;
+        render_popup(popup);
+    }
+}
+
+static void surface_preferred_buffer_transform(void *data,
+    struct wl_surface *surface, uint32_t transform) {
+    (void)data;
+    (void)surface;
+    (void)transform;
+}
+
+static const struct wl_surface_listener surface_listener = {
+    .enter = surface_output,
+    .leave = surface_output,
+    .preferred_buffer_scale = surface_preferred_buffer_scale,
+    .preferred_buffer_transform = surface_preferred_buffer_transform,
+};
 
 static void popup_text_input_rectangle(
     void *data,
@@ -476,13 +541,16 @@ struct candidate_popup *candidate_popup_create(
     for (size_t index = 0; index < POPUP_BUFFER_COUNT; index++) {
         popup->buffers[index].popup = popup;
     }
-    if (!load_font(popup)) {
+    if (!load_font(popup, 1)) {
         candidate_popup_destroy(popup);
         return NULL;
     }
 
     popup->surface = wl_compositor_create_surface(compositor);
-    if (popup->surface != NULL) {
+    if (
+        popup->surface != NULL
+        && wl_surface_add_listener(popup->surface, &surface_listener, popup) == 0
+    ) {
         popup->role = zwp_input_method_v2_get_input_popup_surface(
             input_method,
             popup->surface

@@ -257,6 +257,22 @@ build/src/waytinyime --inspect --table src/assets/flypy.txt --query xm
 - `UseFullWidth`、`IgnorePunc` 保留解析值；符号形态固定跟随中英文模式，不由这
   两个表选项切换。字母、数字及空格仍保持半角。
 
+## 候选窗字体与清晰度
+
+Wayland 与 XIM 候选窗均使用 Fontconfig 的 `sans-serif:lang=zh-cn` 系统匹配，
+保留完整的字体集合索引与可变字体命名实例，不固定某个字体文件或字重。本机
+匹配为 Noto Sans CJK SC Regular；可用以下命令查看当前系统选择：
+
+```sh
+fc-match -f '%{family} %{style} index=%{index}\n' 'sans-serif:lang=zh-cn:pixelsize=18'
+```
+
+候选窗基准字号仍为 18px，不读取 GTK/Qt 的桌面字号。原生 Wayland 在合成器
+支持 `wl_surface.preferred_buffer_scale`（`wl_compositor` v6）时，按建议倍率
+重新栅格化文字与 Emoji，并提交对应的高分辨率缓冲，避免把 1x 小位图直接放大。
+旧合成器维持 1x；尚未接入精确分数缩放协议。XIM 仍使用 X 像素，窗口被
+Xwayland/合成器缩放时可能产生额外模糊。系统字体设置改变后需重启输入法。
+
 ## XIM 前端行为
 
 - 声明样式：`PreeditPosition|StatusNothing`（xterm 默认的 OverTheSpot）、
