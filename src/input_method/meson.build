@@ -5,7 +5,7 @@ input_method_library = static_library(
     'input_processor.c',
     'input_session.c',
   ],
-  include_directories: include_directories('../..'),
+  include_directories: include_directories('../..', '../config'),
   dependencies: [
     code_table_dependency,
     candidate_popup_dependency,
@@ -14,7 +14,7 @@ input_method_library = static_library(
 )
 
 input_method_dependency = declare_dependency(
-  include_directories: include_directories('.'),
+  include_directories: include_directories('.', '../config'),
   link_with: input_method_library,
   dependencies: [
     code_table_dependency,

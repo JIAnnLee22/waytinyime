@@ -1,9 +1,10 @@
 project(
   'waytinyime',
-  'c',
+  ['c', 'cpp'],
   version: '0.1.0',
   default_options: [
     'c_std=c11',
+    'cpp_std=c++20',
     'warning_level=3',
   ],
 )
@@ -14,6 +15,11 @@ fontconfig = dependency('fontconfig')
 freetype = dependency('freetype2')
 xcb_imdkit = dependency('xcb-imdkit')
 xcb_keysyms = dependency('xcb-keysyms')
+libime_table = dependency(
+  'LibIMETable',
+  method: 'cmake',
+  modules: ['LibIME::Table'],
+)
 wayland_scanner = find_program('wayland-scanner', native: true)
 
 protocols = [

@@ -32,12 +32,24 @@ static void session_updated(
         (int32_t)code_length
     );
     zwp_input_method_v2_commit(session->input_method, session->serial);
+    if (input_engine_page_size(engine) == 0) {
+        candidate_popup_hide(session->popup);
+        return;
+    }
+    size_t page = input_engine_page(engine);
+    size_t page_size = input_engine_page_size(engine);
+    size_t total = input_engine_total_candidate_count(engine);
+    size_t offset = page * page_size;
+    size_t remaining = total > offset ? total - offset : 0;
+
     candidate_popup_update(
         session->popup,
         code,
+        code_table_label(engine->table, code),
         engine->candidates,
         input_engine_candidate_count(engine),
-        input_engine_total_candidate_count(engine)
+        input_engine_cursor(engine),
+        remaining
     );
 }
 
@@ -102,6 +114,7 @@ static bool handle_key(
 
 struct input_session *input_session_create(
     const struct code_table *table,
+    const struct table_config *config,
     struct input_mode *mode,
     struct wl_compositor *compositor,
     struct wl_shm *shm,
@@ -139,6 +152,7 @@ struct input_session *input_session_create(
         free(session);
         return NULL;
     }
+    input_processor_set_config(&session->processor, config);
 
     session->popup = candidate_popup_create(compositor, shm, input_method);
     if (session->popup == NULL) {
@@ -183,6 +197,19 @@ void input_session_deactivate(struct input_session *session) {
 
     input_processor_reset(&session->processor);
     candidate_popup_hide(session->popup);
+}
+
+void input_session_cancel(struct input_session *session) {
+    if (session == NULL) {
+        return;
+    }
+
+    if (*input_engine_code(&session->processor.engine) != '\0') {
+        input_processor_cancel(&session->processor);
+    } else {
+        input_processor_reset(&session->processor);
+        candidate_popup_hide(session->popup);
+    }
 }
 
 void input_session_set_serial(struct input_session *session, uint32_t serial) {

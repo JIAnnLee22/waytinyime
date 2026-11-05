@@ -15,6 +15,7 @@
 #include <wayland-client.h>
 
 #include "code_table.h"
+#include "emoji_font.h"
 #include "input-method-v2.h"
 
 #define POPUP_BUFFER_COUNT 2
@@ -48,10 +49,12 @@ struct candidate_popup {
     struct popup_buffer buffers[POPUP_BUFFER_COUNT];
     FT_Library freetype;
     FT_Face font;
+    struct emoji_font emoji;
     char text[POPUP_TEXT_CAPACITY];
-    size_t first_candidate_start;
-    size_t first_candidate_end;
+    size_t cursor_candidate_start;
+    size_t cursor_candidate_end;
     bool redraw_pending;
+    bool visible;
 };
 
 static bool render_popup(struct candidate_popup *popup);
@@ -120,6 +123,9 @@ static bool load_font(struct candidate_popup *popup) {
     }
     if (match != NULL) {
         FcPatternDestroy(match);
+    }
+    if (loaded) {
+        emoji_font_init(&popup->emoji, popup->freetype, POPUP_FONT_SIZE);
     }
     return loaded;
 }
@@ -247,7 +253,16 @@ static void measure_popup(
     while (*cursor != '\0') {
         uint32_t codepoint = next_codepoint(&cursor);
 
-        if (FT_Load_Char(popup->font, codepoint, FT_LOAD_DEFAULT) == 0) {
+        if (codepoint == 0xfe0f || codepoint == 0xfe0e) {
+            continue;
+        }
+        if (
+            (FT_Get_Char_Index(popup->font, codepoint) == 0
+             || strncmp(cursor, "\xef\xb8\x8f", 3) == 0)
+            && emoji_font_load(&popup->emoji, codepoint)
+        ) {
+            text_width += emoji_font_advance(&popup->emoji);
+        } else if (FT_Load_Char(popup->font, codepoint, FT_LOAD_DEFAULT) == 0) {
             text_width += (int)(popup->font->glyph->advance.x >> 6);
         }
     }
@@ -354,11 +369,26 @@ static bool draw_buffer(
     while (*cursor != '\0' && pen_x < buffer->width - POPUP_HORIZONTAL_PADDING) {
         size_t byte_offset = (size_t)(cursor - popup->text);
         uint32_t codepoint = next_codepoint(&cursor);
-        uint32_t color = byte_offset >= popup->first_candidate_start
-                && byte_offset < popup->first_candidate_end
+        uint32_t color = byte_offset >= popup->cursor_candidate_start
+                && byte_offset < popup->cursor_candidate_end
             ? POPUP_HIGHLIGHT
             : POPUP_TEXT;
 
+        if (codepoint == 0xfe0f || codepoint == 0xfe0e) {
+            continue;
+        }
+        if (
+            (FT_Get_Char_Index(popup->font, codepoint) == 0
+             || strncmp(cursor, "\xef\xb8\x8f", 3) == 0)
+            && emoji_font_load(&popup->emoji, codepoint)
+        ) {
+            emoji_font_draw(
+                &popup->emoji, buffer->pixels, buffer->width, buffer->height,
+                buffer->stride / 4, pen_x, baseline, color
+            );
+            pen_x += emoji_font_advance(&popup->emoji);
+            continue;
+        }
         if (FT_Load_Char(popup->font, codepoint, FT_LOAD_RENDER) != 0) {
             continue;
         }
@@ -487,6 +517,7 @@ void candidate_popup_destroy(struct candidate_popup *popup) {
     if (popup->surface != NULL) {
         wl_surface_destroy(popup->surface);
     }
+    emoji_font_destroy(&popup->emoji);
     if (popup->font != NULL) {
         FT_Done_Face(popup->font);
     }
@@ -499,8 +530,10 @@ void candidate_popup_destroy(struct candidate_popup *popup) {
 bool candidate_popup_update(
     struct candidate_popup *popup,
     const char *code,
+    const char *label,
     const struct code_table_entry *const *candidates,
     size_t candidate_count,
+    size_t cursor,
     size_t total_candidate_count
 ) {
     size_t offset;
@@ -509,14 +542,18 @@ bool candidate_popup_update(
     if (popup == NULL || code == NULL || *code == '\0') {
         return false;
     }
+    bool show_codes = strchr(code, CODE_TABLE_WILDCARD) != NULL;
 
-    written = snprintf(popup->text, sizeof(popup->text), "%s    ", code);
+    written = snprintf(
+        popup->text, sizeof(popup->text), "%s%s%s    ",
+        label != NULL ? label : "", label != NULL ? "  " : "", code
+    );
     if (written < 0 || (size_t)written >= sizeof(popup->text)) {
         return false;
     }
     offset = (size_t)written;
-    popup->first_candidate_start = 0;
-    popup->first_candidate_end = 0;
+    popup->cursor_candidate_start = 0;
+    popup->cursor_candidate_end = 0;
 
     if (candidate_count == 0) {
         written = snprintf(
@@ -534,9 +571,12 @@ bool candidate_popup_update(
             written = snprintf(
                 popup->text + offset,
                 sizeof(popup->text) - offset,
-                "%zu.%s%s",
+                "%zu.%s%s%s%s%s",
                 index + 1,
                 candidates[index]->text,
+                show_codes ? " [" : "",
+                show_codes ? candidates[index]->code : "",
+                show_codes ? "]" : "",
                 index + 1 == candidate_count ? "" : "  "
             );
             if (
@@ -546,9 +586,9 @@ bool candidate_popup_update(
                 return false;
             }
             offset += (size_t)written;
-            if (index == 0) {
-                popup->first_candidate_start = start;
-                popup->first_candidate_end = offset;
+            if (index == cursor) {
+                popup->cursor_candidate_start = start;
+                popup->cursor_candidate_end = offset;
             }
         }
     }
@@ -566,16 +606,21 @@ bool candidate_popup_update(
     }
 
     popup->redraw_pending = true;
-    return render_popup(popup);
+    if (!render_popup(popup)) {
+        return false;
+    }
+    popup->visible = true;
+    return true;
 }
 
 void candidate_popup_hide(struct candidate_popup *popup) {
-    if (popup == NULL) {
+    if (popup == NULL || !popup->visible) {
         return;
     }
 
     popup->text[0] = '\0';
     popup->redraw_pending = false;
+    popup->visible = false;
     wl_surface_attach(popup->surface, NULL, 0, 0);
     wl_surface_commit(popup->surface);
 }

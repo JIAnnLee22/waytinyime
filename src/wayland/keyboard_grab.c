@@ -82,6 +82,16 @@ static void keyboard_keymap(
     struct xkb_state *state = NULL;
 
     (void)grab;
+    /*
+     * A zero-sized or non-XKB keymap cannot be forwarded: the virtual
+     * keyboard protocol rejects it and wlroots disconnects the client with
+     * "no memory".  Headless compositors can send such a keymap when no
+     * physical keyboard is present, so keep the old state and ignore it.
+     */
+    if (format != WL_KEYBOARD_KEYMAP_FORMAT_XKB_V1 || size == 0) {
+        close(fd);
+        return;
+    }
     zwp_virtual_keyboard_v1_keymap(
         keyboard->virtual_keyboard,
         format,
@@ -89,21 +99,19 @@ static void keyboard_keymap(
         size
     );
 
-    if (format == WL_KEYBOARD_KEYMAP_FORMAT_XKB_V1 && size > 0) {
-        mapping = mmap(NULL, size, PROT_READ, MAP_PRIVATE, fd, 0);
-        if (mapping != MAP_FAILED) {
-            keymap = xkb_keymap_new_from_buffer(
-                keyboard->xkb_context,
-                mapping,
-                size,
-                XKB_KEYMAP_FORMAT_TEXT_V1,
-                XKB_KEYMAP_COMPILE_NO_FLAGS
-            );
-            munmap(mapping, size);
-        }
-        if (keymap != NULL) {
-            state = xkb_state_new(keymap);
-        }
+    mapping = mmap(NULL, size, PROT_READ, MAP_PRIVATE, fd, 0);
+    if (mapping != MAP_FAILED) {
+        keymap = xkb_keymap_new_from_buffer(
+            keyboard->xkb_context,
+            mapping,
+            size,
+            XKB_KEYMAP_FORMAT_TEXT_V1,
+            XKB_KEYMAP_COMPILE_NO_FLAGS
+        );
+        munmap(mapping, size);
+    }
+    if (keymap != NULL) {
+        state = xkb_state_new(keymap);
     }
     close(fd);
 
@@ -192,13 +200,20 @@ static void keyboard_modifiers(
             group
         );
     }
-    zwp_virtual_keyboard_v1_modifiers(
-        keyboard->virtual_keyboard,
-        mods_depressed,
-        mods_latched,
-        mods_locked,
-        group
-    );
+    /*
+     * wlroots rejects modifier state before the virtual keyboard has a
+     * keymap.  Some headless seats emit modifiers before the first keymap
+     * event; drop those instead of disconnecting the Wayland connection.
+     */
+    if (keyboard->xkb_keymap != NULL) {
+        zwp_virtual_keyboard_v1_modifiers(
+            keyboard->virtual_keyboard,
+            mods_depressed,
+            mods_latched,
+            mods_locked,
+            group
+        );
+    }
 }
 
 static void keyboard_repeat_info(

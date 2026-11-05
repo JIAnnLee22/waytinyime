@@ -14,6 +14,7 @@
     {
       devShells.${system}.default = pkgs.mkShell {
         nativeBuildInputs = with pkgs; [
+          cmake
           meson
           ninja
           pkg-config
@@ -21,8 +22,11 @@
         ];
 
         buildInputs = with pkgs; [
+          boost
+          fcitx5
           fontconfig
           freetype
+          libime
           libxkbcommon
           libxcb
           xcbutil
@@ -47,6 +51,7 @@
         };
 
         nativeBuildInputs = with pkgs; [
+          cmake
           meson
           ninja
           pkg-config
@@ -54,8 +59,11 @@
         ];
 
         buildInputs = with pkgs; [
+          boost
+          fcitx5
           fontconfig
           freetype
+          libime
           libxkbcommon
           libxcb
           xcbutil
@@ -64,7 +72,31 @@
           wayland
         ];
 
-        mesonBuildType = "release";
+        doCheck = true;
+
+        configurePhase = ''
+          runHook preConfigure
+          meson setup build --prefix=$out --buildtype=release
+          runHook postConfigure
+        '';
+
+        buildPhase = ''
+          runHook preBuild
+          meson compile -C build
+          runHook postBuild
+        '';
+
+        checkPhase = ''
+          runHook preCheck
+          meson test -C build --no-rebuild --print-errorlogs
+          runHook postCheck
+        '';
+
+        installPhase = ''
+          runHook preInstall
+          meson install -C build
+          runHook postInstall
+        '';
       };
     };
 }

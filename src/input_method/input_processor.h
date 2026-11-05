@@ -3,8 +3,11 @@
 
 #include <stdbool.h>
 #include <stdint.h>
+#include <regex.h>
 
 #include "input_engine.h"
+#include "table_config.h"
+
 enum input_processor_modifier {
     INPUT_PROCESSOR_MODIFIER_CONTROL = 1 << 0,
     INPUT_PROCESSOR_MODIFIER_ALT = 1 << 1,
@@ -14,8 +17,9 @@ enum input_processor_modifier {
 
 struct input_mode {
     bool chinese;
+    bool single_quote_open;
+    bool double_quote_open;
 };
-
 
 struct input_processor;
 
@@ -30,6 +34,11 @@ struct input_processor {
     struct input_mode *mode;
     const struct input_processor_listener *listener;
     void *listener_data;
+    const struct table_config *config;
+    regex_t auto_select_regex;
+    bool auto_select_regex_valid;
+    regex_t no_match_regex;
+    bool no_match_regex_valid;
 };
 
 bool input_processor_init(
@@ -39,8 +48,20 @@ bool input_processor_init(
     const struct input_processor_listener *listener,
     void *listener_data
 );
+
+/*
+ * Apply the fcitx5 table settings that affect key handling.  Passing NULL
+ * restores the built-in defaults (9 candidates per page, Up/Down paging,
+ * 1..9/0 selection, no auto select).
+ */
+void input_processor_set_config(
+    struct input_processor *processor,
+    const struct table_config *config
+);
+
 void input_processor_destroy(struct input_processor *processor);
 void input_processor_reset(struct input_processor *processor);
+void input_processor_cancel(struct input_processor *processor);
 bool input_processor_handle_key(
     struct input_processor *processor,
     uint32_t symbol,
