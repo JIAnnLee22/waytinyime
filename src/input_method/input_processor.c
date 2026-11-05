@@ -475,6 +475,10 @@ static bool handle_chinese_punctuation(
     case XKB_KEY_bracketright: text = "】"; break;
     case XKB_KEY_asciicircum: text = "……"; break;
     case XKB_KEY_underscore: text = "——"; break;
+    case XKB_KEY_slash:
+    case XKB_KEY_backslash:
+        text = "、";
+        break;
     case XKB_KEY_apostrophe:
         text = processor->mode->single_quote_open ? "’" : "‘";
         processor->mode->single_quote_open = !processor->mode->single_quote_open;
