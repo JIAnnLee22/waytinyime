@@ -24,10 +24,11 @@
 #define POPUP_HORIZONTAL_PADDING 12
 #define POPUP_VERTICAL_PADDING 8
 #define POPUP_FONT_SIZE 18
-#define POPUP_BACKGROUND 0xfffafafaU
-#define POPUP_BORDER 0xff404040U
-#define POPUP_TEXT 0xff141414U
-#define POPUP_HIGHLIGHT 0xff1f5fafU
+/* Catppuccin Mocha, matching mangobar: crust, surface1, text, sapphire. */
+#define POPUP_BACKGROUND 0xff11111bU
+#define POPUP_BORDER 0xff45475aU
+#define POPUP_TEXT 0xffcdd6f4U
+#define POPUP_HIGHLIGHT 0xff74c7ecU
 
 struct candidate_popup;
 
@@ -545,8 +546,9 @@ bool candidate_popup_update(
     bool show_codes = strchr(code, CODE_TABLE_WILDCARD) != NULL;
 
     written = snprintf(
-        popup->text, sizeof(popup->text), "%s%s%s    ",
-        label != NULL ? label : "", label != NULL ? "  " : "", code
+        popup->text, sizeof(popup->text), "%s%s",
+        label != NULL ? label : "",
+        label != NULL && *label != '\0' ? "  " : ""
     );
     if (written < 0 || (size_t)written >= sizeof(popup->text)) {
         return false;

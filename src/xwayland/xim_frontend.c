@@ -293,6 +293,7 @@ static void refresh_window(struct xim_frontend *frontend) {
         root_y,
         code,
         code_table_label(engine->table, code),
+        !preedit_callbacks(frontend),
         engine->candidates,
         input_engine_candidate_count(engine),
         input_engine_cursor(engine),

@@ -17,10 +17,11 @@
 #define XIM_WINDOW_HORIZONTAL_PADDING 12
 #define XIM_WINDOW_VERTICAL_PADDING 8
 #define XIM_WINDOW_FONT_SIZE 18
-#define XIM_WINDOW_BACKGROUND 0xfffafafaU
-#define XIM_WINDOW_BORDER 0xff404040U
-#define XIM_WINDOW_TEXT 0xff141414U
-#define XIM_WINDOW_HIGHLIGHT 0xff1f5fafU
+/* Catppuccin Mocha, matching mangobar: crust, surface1, text, sapphire. */
+#define XIM_WINDOW_BACKGROUND 0xff11111bU
+#define XIM_WINDOW_BORDER 0xff45475aU
+#define XIM_WINDOW_TEXT 0xffcdd6f4U
+#define XIM_WINDOW_HIGHLIGHT 0xff74c7ecU
 
 struct xim_window {
     xcb_connection_t *connection;
@@ -550,6 +551,7 @@ bool xim_window_update(
     int root_y,
     const char *code,
     const char *label,
+    bool show_code,
     const struct code_table_entry *const *candidates,
     size_t candidate_count,
     size_t cursor,
@@ -565,8 +567,11 @@ bool xim_window_update(
     bool show_codes = strchr(code, CODE_TABLE_WILDCARD) != NULL;
 
     written = snprintf(
-        window->text, sizeof(window->text), "%s%s%s    ",
-        label != NULL ? label : "", label != NULL ? "  " : "", code
+        window->text, sizeof(window->text), "%s%s%s%s",
+        label != NULL ? label : "",
+        label != NULL && *label != '\0' ? "  " : "",
+        show_code ? code : "",
+        show_code ? "    " : ""
     );
     if (written < 0 || (size_t)written >= sizeof(window->text)) {
         return false;

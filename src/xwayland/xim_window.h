@@ -21,6 +21,7 @@ bool xim_window_update(
     int root_y,
     const char *code,
     const char *label,
+    bool show_code,
     const struct code_table_entry *const *candidates,
     size_t candidate_count,
     size_t cursor,

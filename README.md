@@ -5,6 +5,10 @@ fcitx5 码表配置与 libime UTF-8 文本/二进制主词库加载、Wayland
 input-method-v2 上屏与候选定位，以及 Xwayland XIM 上屏、预编辑/候选窗口和
 SpotLocation 定位。
 
+候选框不重复显示输入框中的当前编码，普通候选直接从 `1.` 开始；Emoji 类别名
+和通配查询中各候选后的完整编码仍保留。XIM 未采用客户端预编辑回调时，候选框
+保留当前编码作为回退，避免无法查看正在输入的内容。
+
 ## 构建
 
 ```sh
@@ -262,7 +266,8 @@ build/src/waytinyime --inspect --table src/assets/flypy.txt --query xm
 - 对 `PreeditPosition` 消费 IC 的 `XNSpotLocation`/`XNPreeditAttributes`，
   按 XIM 规范把坐标视为客户端窗口相对坐标，再通过
   `xcb_translate_coordinates` 转为根窗口坐标。候选 X 窗口是 override-redirect
-  的 `waytinyime-candidate`，使用 FreeType 绘制当前码、候选列表和游标高亮；
+  的 `waytinyime-candidate`，使用 FreeType 绘制候选列表和游标高亮，仅在客户端
+  未采用预编辑回调时额外绘制当前码；
   提交、Escape、失焦或 `UNSET_IC_FOCUS` 时立即 unmap。
 - 同时监听焦点窗口的 `FocusOut` 和顶层客户窗口的 `StructureNotify`。移动
   xterm 顶层窗口时，即使 XIM 不再发送新的 SpotLocation，候选窗口也会随
